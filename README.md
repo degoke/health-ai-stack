@@ -131,7 +131,7 @@ Package-level detail lives in each `pkg/*/doc.go`.
 | haistack-sync | `pkg/sync` | Partial | Outbox contracts and session helpers; full sync protocol planned |
 | haistack-search | `pkg/search` | Partial | `Indexer` contract; search parser/executor planned |
 | haistack-validate | `pkg/validate` | Partial | `Validator` contract; built-in rules planned |
-| haistack-fhirpath | `pkg/fhirpath` | Planned | FHIRPath engine abstraction |
+| haistack-fhirpath | `pkg/fhirpath` | Done | In-memory FHIRPath engine (Verily-backed); compile, eval, custom functions |
 | haistack-conflict | `pkg/conflict` | Planned | FHIR-aware conflict detection and merge |
 | haistack-modules | `pkg/modules` | Planned | Installable capability modules |
 | haistack-view | `pkg/view` | Planned | ViewDefinition execution |
@@ -221,7 +221,7 @@ Postgres tests: `go test ./pkg/postgres/...` or set `TEST_POSTGRES_DSN` to skip 
 | Stage | Packages | Goal |
 |-------|----------|------|
 | **1 ← current** | types, store, sqlite, core → http, cli, testkit | Local SQLite FHIR runtime; CRUD; history; sync events |
-| **2** | fhirpath, search, validate | Search by name/phone/date/status; basic validation |
+| **2** | fhirpath, search, validate | Search by name/phone/date/status; basic validation (`fhirpath` done) |
 | **3** | sync (full), postgres integration, conflict | Offline create → push → pull → conflict detection |
 | **4** | modules, view | Scheduling module; patient summary and appointment views |
 | **5** | auth, ai | Safe AI tools with permission checks |
@@ -229,7 +229,6 @@ Postgres tests: `go test ./pkg/postgres/...` or set `TEST_POSTGRES_DSN` to skip 
 
 ### Planned package notes
 
-- **fhirpath** — wrap an existing Go library; used by search, views, AI, conflict path detection; not a DB query language
 - **search** — incremental FHIR search parser/executor; MVP params: `_id`, `identifier`, `name`, `phone`, `birthdate`, `patient`, `status`, `date`, `code`, `_lastUpdated`
 - **sync** — push/pull protocol, idempotency, tombstone deletes, global sequence (outbox contracts exist today)
 - **conflict** — stale-base detection, auto-merge for safe fields, human-review for clinical fields
