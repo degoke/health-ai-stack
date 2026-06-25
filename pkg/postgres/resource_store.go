@@ -1,0 +1,129 @@
+package postgres
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/degoke/health-ai-stack/pkg/types"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// ResourceStore persists current resource state in Postgres.
+type ResourceStore struct {
+	exec     execer
+	tenantID string
+}
+
+func newResourceStore(pool *pgxpool.Pool, tenantID string) *ResourceStore {
+	return &ResourceStore{exec: pool, tenantID: tenantID}
+}
+
+func newResourceStoreTx(tx pgx.Tx, tenantID string) *ResourceStore {
+	return &ResourceStore{exec: tx, tenantID: tenantID}
+}
+
+func (s *ResourceStore) Create(ctx context.Context, res *types.ResourceEnvelope) error {
+	if res == nil {
+		return fmt.Errorf("resource envelope is nil")
+	}
+	exists, err := s.Exists(ctx, res.ResourceType, res.ID)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return fmt.Errorf("resource already exists: %s/%s", res.ResourceType, res.ID)
+	}
+
+	_, err = s.exec.Exec(ctx, `
+		INSERT INTO resource (tenant_id, resource_type, id, version_id, last_updated, json, hash, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, now())`,
+		s.tenantID, res.ResourceType, res.ID, res.VersionID, res.LastUpdated, res.JSON, nullString(res.Hash),
+	)
+	if err != nil {
+		return fmt.Errorf("create resource: %w", err)
+	}
+	return nil
+}
+
+func (s *ResourceStore) Read(ctx context.Context, resourceType, id string) (*types.ResourceEnvelope, error) {
+	var (
+		versionID   string
+		lastUpdated time.Time
+		jsonData    []byte
+		hash        *string
+	)
+	err := s.exec.QueryRow(ctx, `
+		SELECT version_id, last_updated, json, hash
+		FROM resource
+		WHERE tenant_id = $1 AND resource_type = $2 AND id = $3`,
+		s.tenantID, resourceType, id,
+	).Scan(&versionID, &lastUpdated, &jsonData, &hash)
+	if err == pgx.ErrNoRows {
+		return nil, fmt.Errorf("resource not found: %s/%s", resourceType, id)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read resource: %w", err)
+	}
+
+	env := &types.ResourceEnvelope{
+		ResourceType: resourceType,
+		ID:           id,
+		VersionID:    versionID,
+		LastUpdated:  lastUpdated,
+		JSON:         jsonData,
+	}
+	if hash != nil {
+		env.Hash = *hash
+	}
+	return env, nil
+}
+
+func (s *ResourceStore) Update(ctx context.Context, res *types.ResourceEnvelope) error {
+	if res == nil {
+		return fmt.Errorf("resource envelope is nil")
+	}
+	tag, err := s.exec.Exec(ctx, `
+		UPDATE resource
+		SET version_id = $1, last_updated = $2, json = $3, hash = $4, updated_at = now()
+		WHERE tenant_id = $5 AND resource_type = $6 AND id = $7`,
+		res.VersionID, res.LastUpdated, res.JSON, nullString(res.Hash),
+		s.tenantID, res.ResourceType, res.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("update resource: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("resource not found: %s/%s", res.ResourceType, res.ID)
+	}
+	return nil
+}
+
+func (s *ResourceStore) Delete(ctx context.Context, resourceType, id string) error {
+	tag, err := s.exec.Exec(ctx, `
+		DELETE FROM resource
+		WHERE tenant_id = $1 AND resource_type = $2 AND id = $3`,
+		s.tenantID, resourceType, id,
+	)
+	if err != nil {
+		return fmt.Errorf("delete resource: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("resource not found: %s/%s", resourceType, id)
+	}
+	return nil
+}
+
+func (s *ResourceStore) Exists(ctx context.Context, resourceType, id string) (bool, error) {
+	var count int
+	err := s.exec.QueryRow(ctx, `
+		SELECT COUNT(1) FROM resource
+		WHERE tenant_id = $1 AND resource_type = $2 AND id = $3`,
+		s.tenantID, resourceType, id,
+	).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("exists resource: %w", err)
+	}
+	return count > 0, nil
+}

@@ -1,0 +1,248 @@
+# Health AI Stack
+
+**Health AI Stack is a collection of modular Go libraries for building FHIR-native health data infrastructure with safe AI access.**
+
+The libraries can be used independently or composed together to create offline-first local runtimes, edge FHIR servers, cloud repositories, sync engines, analytics layers, and health data tools. It is not a single monolithic FHIR server — it is building blocks for health data systems that run locally, at the edge, on-premise, or in the cloud.
+
+**Module:** `github.com/degoke/health-ai-stack` · **Go:** 1.26+
+
+---
+
+## Why it exists
+
+Healthcare infrastructure is usually always-online and centralized. That breaks down when internet is unreliable, clinics need local-first workflows, field workers capture data offline, hospitals want on-premise control, and AI tools need structured, permissioned access — without a heavy platform just to store, sync, query, or process FHIR data.
+
+FHIR provides a common data model, but practical systems still need infrastructure for storage, search, sync, history, validation, authorization, analytics, and AI-safe access. Health AI Stack makes those pieces modular.
+
+---
+
+## The story
+
+> What if a clinic, mobile health app, or edge health system could keep working when the cloud is unavailable, while still using FHIR as the data foundation?
+
+The stack targets **on-device, offline-first, edge, on-premise, cloud, and AI-assisted** deployments. The goal is reusable libraries — not replacing every FHIR server — that developers compose into their own systems: local SQLite stores, Postgres edge repositories, Git-inspired sync, FHIRPath and search, ViewDefinitions, blob handling, audit/auth primitives, and safe AI tools.
+
+**Use cases:** offline health apps, embedded FHIR stores, edge/cloud backends, device-to-cloud sync, patient intake, clinic scheduling, analytics layers, and AI tools with permissioned FHIR access.
+
+---
+
+## Core ideas
+
+**Modular, not monolithic** — use only what you need (SQLite store alone, FHIRPath alone, full edge stack, etc.).
+
+**Offline-first** — create, update, search, and store locally; push to edge/cloud when connectivity returns.
+
+**Git-inspired sync** — local write = provisional commit; edge/cloud = canonical branch; push/pull/conflict resolution for resource-aware merges.
+
+**Safe AI access** — AI tools call typed, permissioned paths (FHIRPath / views / search) → structured context → audit log, not raw records by default.
+
+**Postgres-first edge** — one Go binary + one Postgres database can hold resources, history, search indexes, sync events, blobs, views, jobs, and audit logs. External services (object storage, OpenSearch, queues) are optional for cloud scale, not required at the edge.
+
+**Technical foundation** — canonical FHIR JSON is the source of truth. Resources flow as `ResourceEnvelope` values (version, hash, timestamps). Business rules live in `pkg/core`; persistence swaps via `pkg/store` contracts and `pkg/sqlite` / `pkg/postgres` adapters.
+
+---
+
+## Example composition
+
+**Local offline runtime:** `core`, `sqlite`, `search`, `sync`, `fhirpath`, `http`
+
+**Edge FHIR server:** `core`, `postgres`, `search`, `sync`, `conflict`, `binary`, `view`, `auth`, `http`
+
+**AI health data tool:** `ai`, `view`, `fhirpath`, `auth`, `client`
+
+Import paths: `github.com/degoke/health-ai-stack/pkg/…`
+
+---
+
+## Project status
+
+Early-stage, under active development.
+
+| | |
+|---|---|
+| **Done** | `types`, `proto`, `store`, `sqlite`, `postgres`, `core` — CRUD, history, transaction bundles, atomic writes |
+| **Partial** | `sync` (outbox contracts), `search` (indexer contract), `validate` (validator contract) |
+| **Next (Stage 1)** | `http`, `cli`, `testkit`, basic search on existing storage/core layers |
+
+Audit and job persistence are available via `pkg/postgres` today. See [Roadmap](#roadmap) for the full plan.
+
+---
+
+## Architecture
+
+```
+                    ┌─────────────────────────────────────┐
+                    │  Application (HTTP/gRPC — future)   │
+                    └─────────────────┬───────────────────┘
+                                      │
+                    ┌─────────────────▼───────────────────┐
+                    │           pkg/core                  │
+                    │  ResourceService, bundles, errors   │
+                    └─┬─────────┬─────────┬───────────────┘
+                      │         │         │
+         ┌────────────┘         │         └────────────┐
+         ▼                      ▼                      ▼
+  pkg/validate           pkg/search              pkg/sync
+  (optional)             (optional)              (optional)
+         │                      │                      │
+         └──────────────────────┼──────────────────────┘
+                                ▼
+                    ┌───────────────────────┐
+                    │      pkg/store        │
+                    │  storage contracts    │
+                    └───────────┬───────────┘
+                                │
+              ┌─────────────────┴─────────────────┐
+              ▼                                   ▼
+       pkg/sqlite                          pkg/postgres
+   (embedded / offline)              (tenant-scoped server)
+              │                                   │
+              └─────────────────┬─────────────────┘
+                                ▼
+                    ┌───────────────────────┐
+                    │      pkg/types        │
+                    │  envelopes, JSON, hash│
+                    └───────────┬───────────┘
+                                │
+                    ┌───────────▼───────────┐
+                    │      pkg/proto        │
+                    │  optional R4 adapters │
+                    └───────────────────────┘
+```
+
+**Write path:** validate (optional) → assign id/version → persist resource + history → append outbox event (optional) → update search index (optional) — all in one `WriteSession` transaction.
+
+Package-level detail lives in each `pkg/*/doc.go`.
+
+---
+
+## Packages
+
+| Library | Package | Status | Role |
+|---------|---------|--------|------|
+| haistack-types | `pkg/types` | Done | FHIR JSON envelopes, canonical normalization, hashing, OperationOutcome |
+| haistack-proto | `pkg/proto` | Done | Google FHIR R4 proto adapter; JSON remains canonical |
+| haistack-store | `pkg/store` | Done | Storage interfaces — resource, history, search, events, blobs, jobs, audit, `WriteSession` |
+| haistack-sqlite | `pkg/sqlite` | Done | Embedded offline DB (pure Go, WAL, migrations, atomic local writes) |
+| haistack-postgres | `pkg/postgres` | Done | Tenant-scoped server store; accepted/rejected/conflicted writes; ID registry |
+| haistack-core | `pkg/core` | Done | FHIR runtime kernel — CRUD, history, transaction bundles, ID policy, errors |
+| haistack-sync | `pkg/sync` | Partial | Outbox contracts and session helpers; full sync protocol planned |
+| haistack-search | `pkg/search` | Partial | `Indexer` contract; search parser/executor planned |
+| haistack-validate | `pkg/validate` | Partial | `Validator` contract; built-in rules planned |
+| haistack-fhirpath | `pkg/fhirpath` | Planned | FHIRPath engine abstraction |
+| haistack-conflict | `pkg/conflict` | Planned | FHIR-aware conflict detection and merge |
+| haistack-modules | `pkg/modules` | Planned | Installable capability modules |
+| haistack-view | `pkg/view` | Planned | ViewDefinition execution |
+| haistack-ai | `pkg/ai` | Planned | Safe, typed AI tool harness |
+| haistack-auth | `pkg/auth` | Planned | Authorization and policy |
+| haistack-smart | `pkg/smart` | Planned | Optional SMART on FHIR |
+| haistack-binary | `pkg/binary` | Planned | Blob/file sync and Binary resources |
+| haistack-subscriptions | `pkg/subscriptions` | Planned | Change-triggered workflows |
+| haistack-analytics | `pkg/analytics` | Planned | View export and warehouse sinks |
+| haistack-http | `pkg/http` | Planned | FHIR REST API adapter |
+| haistack-client | `pkg/client` | Planned | Go SDK |
+| haistack-runtime | `pkg/runtime` | Planned | Composition and lifecycle glue |
+| haistack-cli | `cmd/haistack` | Planned | Developer/operator CLI |
+| haistack-testkit | `pkg/testkit` | Planned | Fixtures, fakes, scenario runners |
+
+---
+
+## Getting started
+
+**Requirements:** Go 1.26+ · Docker or `TEST_POSTGRES_DSN` optional (Postgres integration tests)
+
+```bash
+git clone https://github.com/degoke/health-ai-stack.git
+cd health-ai-stack
+go test ./...
+```
+
+### Local runtime (SQLite)
+
+```go
+import (
+    "context"
+
+    "github.com/degoke/health-ai-stack/pkg/core"
+    "github.com/degoke/health-ai-stack/pkg/sqlite"
+    "github.com/degoke/health-ai-stack/pkg/sync"
+    "github.com/degoke/health-ai-stack/pkg/types"
+)
+
+ctx := context.Background()
+
+db, err := sqlite.Open("/path/to/haistack.db")
+if err != nil { /* handle */ }
+defer db.Close()
+
+if err := db.Migrate(ctx); err != nil { /* handle */ }
+
+svc, err := core.NewResourceService(core.ResourceServiceConfig{
+    Resources: db.ResourceStore(),
+    History:   db.HistoryStore(),
+    Sessions:  db,
+    Outbox:    &sync.EventStoreOutbox{Events: db.OutboxStore()},
+})
+
+created, err := svc.Create(ctx, &types.ResourceEnvelope{
+    ResourceType: "Patient",
+    JSON:         patientJSON,
+})
+```
+
+### Server runtime (Postgres)
+
+```go
+db, err := postgres.Open(ctx, "postgres://user:pass@localhost:5432/haistack?sslmode=disable")
+tdb := db.Tenant("tenant-a")
+envelope, err := tdb.ResourceStore().Read(ctx, "Patient", "pat-1")
+```
+
+### Errors → OperationOutcome
+
+```go
+if err != nil {
+    outcome := core.OperationOutcomeFromError(err)
+}
+```
+
+Postgres tests: `go test ./pkg/postgres/...` or set `TEST_POSTGRES_DSN` to skip Docker.
+
+---
+
+## Roadmap
+
+**Design rule:** core packages define interfaces; database packages implement them; HTTP/CLI/runtime packages glue them together; third-party libraries sit behind adapters.
+
+### Build order
+
+| Stage | Packages | Goal |
+|-------|----------|------|
+| **1 ← current** | types, store, sqlite, core → http, cli, testkit | Local SQLite FHIR runtime; CRUD; history; sync events |
+| **2** | fhirpath, search, validate | Search by name/phone/date/status; basic validation |
+| **3** | sync (full), postgres integration, conflict | Offline create → push → pull → conflict detection |
+| **4** | modules, view | Scheduling module; patient summary and appointment views |
+| **5** | auth, ai | Safe AI tools with permission checks |
+| **6** | binary, subscriptions, analytics, smart | Documents, workflows, exports, external SMART apps |
+
+### Planned package notes
+
+- **fhirpath** — wrap an existing Go library; used by search, views, AI, conflict path detection; not a DB query language
+- **search** — incremental FHIR search parser/executor; MVP params: `_id`, `identifier`, `name`, `phone`, `birthdate`, `patient`, `status`, `date`, `code`, `_lastUpdated`
+- **sync** — push/pull protocol, idempotency, tombstone deletes, global sequence (outbox contracts exist today)
+- **conflict** — stale-base detection, auto-merge for safe fields, human-review for clinical fields
+- **modules** — manifest-driven bundles of resources, profiles, search params, views, AI tools, permissions
+- **view** — SQL-on-FHIR-style ViewDefinitions → structured rows for AI and analytics
+- **ai** — typed tool registry; LLMs call tools, not arbitrary FHIR commands
+- **auth** — roles, permissions, tenant context, patient compartment; SMART stays in `smart`
+- **http** — thin REST over core/search: CRUD, `_history`, `_search`, `metadata`
+- **runtime** — wires stores, core, sync, modules, HTTP into local/edge/cloud modes
+- **cli** — `serve`, `validate`, `import`, `search`, sync status, `fhirpath eval`
+
+Target layout when complete: `cmd/haistack*`, `pkg/*`, `modules/*`, `examples/*`.
+
+---
+
+## License
+
+License not yet specified in this repository. Add a `LICENSE` file before public distribution.

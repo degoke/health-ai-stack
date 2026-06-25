@@ -1,0 +1,46 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bin/
+/dist/
+
+# Test artifacts
+*.test
+*.out
+coverage.out
+coverage.html
+profile.out
+cpu.out
+mem.out
+
+# Go workspace
+go.work
+go.work.sum
+
+# Dependencies
+/vendor/
+
+# IDE and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Local databases and temp files
+*.db
+*.sqlite
+*.sqlite3
+/tmp/

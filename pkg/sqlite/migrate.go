@@ -1,0 +1,87 @@
+package sqlite
+
+import (
+	"context"
+	"database/sql"
+	"embed"
+	"fmt"
+	"sort"
+	"strconv"
+	"strings"
+)
+
+//go:embed migrations/*.sql
+var migrationFS embed.FS
+
+func runMigrations(ctx context.Context, db *sql.DB) error {
+	if _, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version    INTEGER PRIMARY KEY,
+			applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+		)`); err != nil {
+		return fmt.Errorf("ensure schema_migrations table: %w", err)
+	}
+
+	entries, err := migrationFS.ReadDir("migrations")
+	if err != nil {
+		return fmt.Errorf("read migrations dir: %w", err)
+	}
+
+	var files []string
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+			continue
+		}
+		files = append(files, entry.Name())
+	}
+	sort.Strings(files)
+
+	for _, name := range files {
+		version, err := migrationVersion(name)
+		if err != nil {
+			return err
+		}
+
+		var applied int
+		err = db.QueryRowContext(ctx, `SELECT COUNT(1) FROM schema_migrations WHERE version = ?`, version).Scan(&applied)
+		if err != nil {
+			return fmt.Errorf("check migration %d: %w", version, err)
+		}
+		if applied > 0 {
+			continue
+		}
+
+		body, err := migrationFS.ReadFile("migrations/" + name)
+		if err != nil {
+			return fmt.Errorf("read migration %s: %w", name, err)
+		}
+
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin migration %d: %w", version, err)
+		}
+
+		if _, err := tx.ExecContext(ctx, string(body)); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("apply migration %d: %w", version, err)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations (version) VALUES (?)`, version); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("record migration %d: %w", version, err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit migration %d: %w", version, err)
+		}
+	}
+
+	return nil
+}
+
+func migrationVersion(name string) (int, error) {
+	prefix := strings.SplitN(name, "_", 2)[0]
+	version, err := strconv.Atoi(prefix)
+	if err != nil {
+		return 0, fmt.Errorf("invalid migration filename %q: %w", name, err)
+	}
+	return version, nil
+}

@@ -1,0 +1,141 @@
+package sqlite
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+
+	"github.com/degoke/health-ai-stack/pkg/types"
+)
+
+// ResourceStore persists current resource state in SQLite.
+type ResourceStore struct {
+	exec queryExec
+}
+
+func newResourceStore(db *sql.DB) *ResourceStore {
+	return &ResourceStore{exec: db}
+}
+
+func newResourceStoreTx(tx *sql.Tx) *ResourceStore {
+	return &ResourceStore{exec: tx}
+}
+
+type queryExec interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+func (s *ResourceStore) Create(ctx context.Context, res *types.ResourceEnvelope) error {
+	if res == nil {
+		return fmt.Errorf("resource envelope is nil")
+	}
+	exists, err := s.Exists(ctx, res.ResourceType, res.ID)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return fmt.Errorf("resource already exists: %s/%s", res.ResourceType, res.ID)
+	}
+
+	_, err = s.exec.ExecContext(ctx, `
+		INSERT INTO resource (resource_type, id, version_id, last_updated, json, hash, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`,
+		res.ResourceType, res.ID, res.VersionID, formatTime(res.LastUpdated), res.JSON, res.Hash,
+	)
+	if err != nil {
+		return fmt.Errorf("create resource: %w", err)
+	}
+	return nil
+}
+
+func (s *ResourceStore) Read(ctx context.Context, resourceType, id string) (*types.ResourceEnvelope, error) {
+	var (
+		versionID   string
+		lastUpdated string
+		jsonData    []byte
+		hash        sql.NullString
+	)
+	err := s.exec.QueryRowContext(ctx, `
+		SELECT version_id, last_updated, json, hash
+		FROM resource
+		WHERE resource_type = ? AND id = ?`,
+		resourceType, id,
+	).Scan(&versionID, &lastUpdated, &jsonData, &hash)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("resource not found: %s/%s", resourceType, id)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read resource: %w", err)
+	}
+
+	ts, err := parseTime(lastUpdated)
+	if err != nil {
+		return nil, err
+	}
+
+	env := &types.ResourceEnvelope{
+		ResourceType: resourceType,
+		ID:           id,
+		VersionID:    versionID,
+		LastUpdated:  ts,
+		JSON:         jsonData,
+	}
+	if hash.Valid {
+		env.Hash = hash.String
+	}
+	return env, nil
+}
+
+func (s *ResourceStore) Update(ctx context.Context, res *types.ResourceEnvelope) error {
+	if res == nil {
+		return fmt.Errorf("resource envelope is nil")
+	}
+	result, err := s.exec.ExecContext(ctx, `
+		UPDATE resource
+		SET version_id = ?, last_updated = ?, json = ?, hash = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+		WHERE resource_type = ? AND id = ?`,
+		res.VersionID, formatTime(res.LastUpdated), res.JSON, res.Hash, res.ResourceType, res.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("update resource: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update resource rows affected: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("resource not found: %s/%s", res.ResourceType, res.ID)
+	}
+	return nil
+}
+
+func (s *ResourceStore) Delete(ctx context.Context, resourceType, id string) error {
+	result, err := s.exec.ExecContext(ctx, `
+		DELETE FROM resource WHERE resource_type = ? AND id = ?`,
+		resourceType, id,
+	)
+	if err != nil {
+		return fmt.Errorf("delete resource: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete resource rows affected: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("resource not found: %s/%s", resourceType, id)
+	}
+	return nil
+}
+
+func (s *ResourceStore) Exists(ctx context.Context, resourceType, id string) (bool, error) {
+	var count int
+	err := s.exec.QueryRowContext(ctx, `
+		SELECT COUNT(1) FROM resource WHERE resource_type = ? AND id = ?`,
+		resourceType, id,
+	).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("exists resource: %w", err)
+	}
+	return count > 0, nil
+}
