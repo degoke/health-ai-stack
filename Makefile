@@ -35,6 +35,9 @@ build: ## Build all packages
 tidy: ## Tidy go.mod and go.sum
 	$(GO) mod tidy
 
+generate-r4-bundle: ## Regenerate embedded HL7 FHIR R4 base catalog
+	python3 scripts/generate-r4-bundle.py
+
 clean: ## Remove build artifacts and test binaries
 	$(GO) clean -testcache
 	rm -f coverage.out coverage.html

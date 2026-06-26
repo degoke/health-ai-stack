@@ -104,6 +104,11 @@ func (tdb *TenantDB) NodeRegistry() *NodeRegistry {
 	return newNodeRegistry(tdb.pool, tdb.tenantID)
 }
 
+// RegistryInstallStore returns a tenant-scoped registry install overlay store.
+func (tdb *TenantDB) RegistryInstallStore() *RegistryInstallStore {
+	return newRegistryInstallStore(tdb.pool, tdb.tenantID)
+}
+
 // BeginWrite starts a tenant-scoped atomic write session.
 func (tdb *TenantDB) BeginWrite(ctx context.Context) (store.WriteSession, error) {
 	return tdb.BeginSession(ctx)

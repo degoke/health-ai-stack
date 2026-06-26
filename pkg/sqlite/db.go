@@ -105,6 +105,16 @@ func (db *DB) ModuleStore() *ModuleStore {
 	return newModuleStore(db.sql)
 }
 
+// DefinitionStore returns a connection-scoped FHIR definition catalog store.
+func (db *DB) DefinitionStore() *DefinitionStore {
+	return newDefinitionStore(db.sql)
+}
+
+// RegistryInstallStore returns a connection-scoped registry install overlay store.
+func (db *DB) RegistryInstallStore() *RegistryInstallStore {
+	return newRegistryInstallStore(db.sql)
+}
+
 // LocalWrite bundles the inputs for one atomic local write pipeline.
 type LocalWrite struct {
 	Resource      *types.ResourceEnvelope

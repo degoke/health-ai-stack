@@ -23,6 +23,8 @@ var (
 	_ store.ConflictStore        = (*sqlite.ConflictStore)(nil)
 	_ store.BinaryStore          = (*sqlite.BinaryStore)(nil)
 	_ store.ModuleStore          = (*sqlite.ModuleStore)(nil)
+	_ store.DefinitionStore      = (*sqlite.DefinitionStore)(nil)
+	_ store.RegistryInstallStore = (*sqlite.RegistryInstallStore)(nil)
 	_ store.WriteSession         = (*sqlite.Session)(nil)
 	_ store.WriteSessionProvider = (*sqlite.DB)(nil)
 )
@@ -53,7 +55,9 @@ func TestMigrationCreatesSchema(t *testing.T) {
 		"resource", "resource_history",
 		"search_token", "search_string", "search_date", "search_number", "search_reference",
 		"sync_outbox", "sync_inbox_applied", "sync_cursor", "sync_conflict",
-		"binary_object", "module_registry", "schema_migrations",
+		"binary_object", "module_registry",
+		"definition_resource", "definition_target", "registry_install",
+		"schema_migrations",
 	}
 	for _, table := range tables {
 		var name string

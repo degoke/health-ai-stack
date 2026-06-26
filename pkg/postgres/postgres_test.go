@@ -33,6 +33,8 @@ var (
 	_ store.AnalyticsStore        = (*postgres.AnalyticsStore)(nil)
 	_ store.JobStore              = (*postgres.JobStore)(nil)
 	_ store.NodeRegistryStore     = (*postgres.NodeRegistry)(nil)
+	_ store.DefinitionStore       = (*postgres.DefinitionStore)(nil)
+	_ store.RegistryInstallStore  = (*postgres.RegistryInstallStore)(nil)
 	_ store.WriteSession          = (*postgres.Session)(nil)
 	_ store.WriteSessionProvider  = (*postgres.TenantDB)(nil)
 )

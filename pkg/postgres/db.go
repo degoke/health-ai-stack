@@ -61,6 +61,11 @@ func (db *DB) Tenant(tenantID string) *TenantDB {
 	return &TenantDB{pool: db.pool, tenantID: tenantID}
 }
 
+// DefinitionStore returns the global FHIR definition catalog store.
+func (db *DB) DefinitionStore() *DefinitionStore {
+	return newDefinitionStore(db.pool)
+}
+
 // EnsureTenant registers a tenant row if it does not already exist.
 func (db *DB) EnsureTenant(ctx context.Context, tenantID string) error {
 	_, err := db.pool.Exec(ctx, `

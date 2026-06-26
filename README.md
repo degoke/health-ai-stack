@@ -46,9 +46,9 @@ The stack targets **on-device, offline-first, edge, on-premise, cloud, and AI-as
 
 ## Example composition
 
-**Local offline runtime:** `core`, `sqlite`, `search`, `sync`, `fhirpath`, `http`
+**Local offline runtime:** `core`, `sqlite`, `registry`, `search`, `sync`, `fhirpath`, `http`
 
-**Edge FHIR server:** `core`, `postgres`, `search`, `sync`, `conflict`, `binary`, `view`, `auth`, `http`
+**Edge FHIR server:** `core`, `postgres`, `registry`, `search`, `sync`, `conflict`, `binary`, `view`, `auth`, `http`
 
 **AI health data tool:** `ai`, `view`, `fhirpath`, `auth`, `client`
 
@@ -62,7 +62,7 @@ Early-stage, under active development.
 
 | | |
 |---|---|
-| **Done** | `types`, `proto`, `store`, `sqlite`, `postgres`, `core`, `validate`, `fhirpath` — CRUD, history, transaction bundles, atomic writes, structural validation, FHIRPath |
+| **Done** | `types`, `proto`, `store`, `sqlite`, `postgres`, `core`, `validate`, `fhirpath`, `registry` — CRUD, history, transaction bundles, atomic writes, structural validation, FHIRPath, FHIR definition catalog |
 | **Partial** | `sync` (outbox contracts), `search` (indexer contract) |
 | **Next (Stage 1)** | `http`, `cli`, `testkit`, basic search on existing storage/core layers |
 
@@ -88,6 +88,11 @@ Audit and job persistence are available via `pkg/postgres` today. See [Roadmap](
   (optional)             (optional)              (optional)
          │                      │                      │
          └──────────────────────┼──────────────────────┘
+                                │
+                    ┌───────────▼───────────┐
+                    │      pkg/registry       │
+                    │  FHIR definition catalog│
+                    └───────────┬─────────────┘
                                 ▼
                     ┌───────────────────────┐
                     │      pkg/store        │
@@ -124,9 +129,10 @@ Package-level detail lives in each `pkg/*/doc.go`.
 |---------|---------|--------|------|
 | haistack-types | `pkg/types` | Done | FHIR JSON envelopes, canonical normalization, hashing, OperationOutcome |
 | haistack-proto | `pkg/proto` | Done | Google FHIR R4 proto adapter; JSON remains canonical |
-| haistack-store | `pkg/store` | Done | Storage interfaces — resource, history, search, events, blobs, jobs, audit, `WriteSession` |
+| haistack-store | `pkg/store` | Done | Storage interfaces — resource, history, search, events, definition catalog, blobs, jobs, audit, `WriteSession` |
 | haistack-sqlite | `pkg/sqlite` | Done | Embedded offline DB (pure Go, WAL, migrations, atomic local writes) |
 | haistack-postgres | `pkg/postgres` | Done | Tenant-scoped server store; accepted/rejected/conflicted writes; ID registry |
+| haistack-registry | `pkg/registry` | Done | Bundled R4 definitions, enablement overlay, compiled snapshot, capability metadata |
 | haistack-core | `pkg/core` | Done | FHIR runtime kernel — CRUD, history, transaction bundles, ID policy, errors |
 | haistack-sync | `pkg/sync` | Partial | Outbox contracts and session helpers; full sync protocol planned |
 | haistack-search | `pkg/search` | Partial | `Indexer` contract; search parser/executor planned |
@@ -166,6 +172,7 @@ import (
     "context"
 
     "github.com/degoke/health-ai-stack/pkg/core"
+    "github.com/degoke/health-ai-stack/pkg/registry"
     "github.com/degoke/health-ai-stack/pkg/sqlite"
     "github.com/degoke/health-ai-stack/pkg/sync"
     "github.com/degoke/health-ai-stack/pkg/types"
@@ -178,6 +185,15 @@ if err != nil { /* handle */ }
 defer db.Close()
 
 if err := db.Migrate(ctx); err != nil { /* handle */ }
+
+reg := registry.NewManager(registry.Config{
+    Definitions: db.DefinitionStore(),
+    Installs:    db.RegistryInstallStore(),
+})
+if err := reg.SeedBundled(ctx); err != nil { /* handle */ }
+if err := reg.EnableResource(ctx, "Patient"); err != nil { /* handle */ }
+snapshot, err := reg.RebuildSnapshot(ctx)
+if err != nil { /* handle */ }
 
 svc, err := core.NewResourceService(core.ResourceServiceConfig{
     Resources: db.ResourceStore(),
@@ -197,6 +213,14 @@ created, err := svc.Create(ctx, &types.ResourceEnvelope{
 ```go
 db, err := postgres.Open(ctx, "postgres://user:pass@localhost:5432/haistack?sslmode=disable")
 tdb := db.Tenant("tenant-a")
+if err := db.EnsureTenant(ctx, "tenant-a"); err != nil { /* handle */ }
+
+reg := registry.NewManager(registry.Config{
+    Definitions: db.DefinitionStore(),
+    Installs:    tdb.RegistryInstallStore(),
+})
+_ = reg.SeedBundled(ctx)
+
 envelope, err := tdb.ResourceStore().Read(ctx, "Patient", "pat-1")
 ```
 
