@@ -75,6 +75,15 @@ func (reg *r4ResourceRegistry) isKnownMessage(name protoreflect.FullName) bool {
 	return ok
 }
 
+// KnownR4ResourceTypes returns the FHIR resource types supported by GoogleR4Codec.
+func KnownR4ResourceTypes() map[string]struct{} {
+	out := make(map[string]struct{}, len(defaultR4Registry.byFHIRType))
+	for rt := range defaultR4Registry.byFHIRType {
+		out[rt] = struct{}{}
+	}
+	return out
+}
+
 func (reg *r4ResourceRegistry) isContainedResource(name protoreflect.FullName) bool {
 	return name == containedResourceFullName()
 }

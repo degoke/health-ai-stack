@@ -175,6 +175,40 @@ func TestValidatorFailureAbortsWrite(t *testing.T) {
 	}
 }
 
+func TestBuiltinValidatorAbortsWrite(t *testing.T) {
+	eng, err := validate.NewEngine(validate.Config{})
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	harness := newTestHarness(t, harnessOptions{
+		validator: validate.NewCoreValidator(eng, validate.ValidateOptions{}),
+	})
+	ctx := context.Background()
+
+	invalid := &types.ResourceEnvelope{
+		ResourceType: "Patient",
+		JSON:         []byte(`{"resourceType":"Patient","id":"bad id!"}`),
+	}
+	_, err = harness.svc.Create(ctx, invalid)
+	if err == nil || core.KindOf(err) != core.ErrorKindInvalid {
+		t.Fatalf("expected invalid error, got %v", err)
+	}
+
+	outcome := core.OperationOutcomeFromError(err)
+	if outcome == nil || len(outcome.Issue) == 0 {
+		t.Fatal("expected operation outcome")
+	}
+	if outcome.Issue[0].Code != "invalid" {
+		t.Fatalf("issue code = %q, want invalid", outcome.Issue[0].Code)
+	}
+	if !strings.Contains(outcome.Issue[0].Diagnostics, "FHIR id syntax") {
+		t.Fatalf("diagnostics = %q", outcome.Issue[0].Diagnostics)
+	}
+	if harness.mem.resourceCount() != 0 {
+		t.Fatalf("resource count = %d, want 0", harness.mem.resourceCount())
+	}
+}
+
 func TestIndexerFailureAbortsWrite(t *testing.T) {
 	mem := newMemBackend()
 	svc, err := core.NewResourceService(core.ResourceServiceConfig{

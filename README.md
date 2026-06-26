@@ -62,8 +62,8 @@ Early-stage, under active development.
 
 | | |
 |---|---|
-| **Done** | `types`, `proto`, `store`, `sqlite`, `postgres`, `core` — CRUD, history, transaction bundles, atomic writes |
-| **Partial** | `sync` (outbox contracts), `search` (indexer contract), `validate` (validator contract) |
+| **Done** | `types`, `proto`, `store`, `sqlite`, `postgres`, `core`, `validate`, `fhirpath` — CRUD, history, transaction bundles, atomic writes, structural validation, FHIRPath |
+| **Partial** | `sync` (outbox contracts), `search` (indexer contract) |
 | **Next (Stage 1)** | `http`, `cli`, `testkit`, basic search on existing storage/core layers |
 
 Audit and job persistence are available via `pkg/postgres` today. See [Roadmap](#roadmap) for the full plan.
@@ -130,7 +130,7 @@ Package-level detail lives in each `pkg/*/doc.go`.
 | haistack-core | `pkg/core` | Done | FHIR runtime kernel — CRUD, history, transaction bundles, ID policy, errors |
 | haistack-sync | `pkg/sync` | Partial | Outbox contracts and session helpers; full sync protocol planned |
 | haistack-search | `pkg/search` | Partial | `Indexer` contract; search parser/executor planned |
-| haistack-validate | `pkg/validate` | Partial | `Validator` contract; built-in rules planned |
+| haistack-validate | `pkg/validate` | Done | Built-in structural validation engine; core `Validator` adapter |
 | haistack-fhirpath | `pkg/fhirpath` | Done | In-memory FHIRPath engine (Verily-backed); compile, eval, custom functions |
 | haistack-conflict | `pkg/conflict` | Planned | FHIR-aware conflict detection and merge |
 | haistack-modules | `pkg/modules` | Planned | Installable capability modules |
@@ -221,7 +221,7 @@ Postgres tests: `go test ./pkg/postgres/...` or set `TEST_POSTGRES_DSN` to skip 
 | Stage | Packages | Goal |
 |-------|----------|------|
 | **1 ← current** | types, store, sqlite, core → http, cli, testkit | Local SQLite FHIR runtime; CRUD; history; sync events |
-| **2** | fhirpath, search, validate | Search by name/phone/date/status; basic validation (`fhirpath` done) |
+| **2** | search, validate | Search by name/phone/date/status; basic validation (`fhirpath`, `validate` done) |
 | **3** | sync (full), postgres integration, conflict | Offline create → push → pull → conflict detection |
 | **4** | modules, view | Scheduling module; patient summary and appointment views |
 | **5** | auth, ai | Safe AI tools with permission checks |
